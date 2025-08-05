@@ -1,126 +1,135 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useAppContext } from '@/context/AppContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { toast } from 'sonner';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/components/ui/use-toast";
+import { useUser } from "@/context/userContext";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
+
+const loginSchema = z.object({
+  phoneNumber: z.string().min(10, { message: "Phone number must have at least 10 digits" }),
+  password: z.string().min(1, { message: "Password is required" }),
+});
 
 const Login = () => {
-  const { loginWithPhoneAndPassword, getCurrentUser, setCurrentUser } = useAppContext();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
-  
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [password, setPassword] = useState('');
+  const { login, setCurrentUser } = useUser();
   const [isLoading, setIsLoading] = useState(false);
-  
-  // Check if user is already logged in
-  useEffect(() => {
-    const currentUser = getCurrentUser();
-    if (currentUser) {
-      navigate(from);
-    }
-  }, [getCurrentUser, navigate, from]);
-  
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  const form = useForm<z.infer<typeof loginSchema>>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      phoneNumber: "",
+      password: "",
+    },
+  });
+
+  const onSubmit = (values: z.infer<typeof loginSchema>) => {
     setIsLoading(true);
     
-    console.log("Attempting login with phone:", phoneNumber, "password:", password);
-    
-    // SPECIAL CASE: Hardcoded admin login as a fallback
-    if (phoneNumber === '1234567890' && password === 'admin123') {
-      console.log("Using special admin login bypass");
-      const adminUser = {
-        id: 'admin-user-id',
-        name: 'Admin User',
-        permissions: ['admin'],
-        phoneNumber: '1234567890',
-        profileCompleted: true,
-        invitationStatus: 'accepted'
-      };
+    try {
+      const user = login(values.phoneNumber, values.password);
       
-      // Store admin user in localStorage directly
-      localStorage.setItem('campshare-current-user', JSON.stringify(adminUser));
-      
-      // Use the setCurrentUser function from props, not from hook inside handler
-      setCurrentUser(adminUser);
-      
-      toast.success('Logged in successfully!');
-      console.log("Navigating to:", from);
-      
-      // Force navigation with window.location
-      window.location.href = '/';
-      
-      return;
-    }
-    
-    // Standard login
-    const user = loginWithPhoneAndPassword(phoneNumber, password);
-    
-    if (user) {
-      toast.success('Logged in successfully!');
-      
-      // If the user has a temporary password, redirect to set password page
-      if (user.tempPassword) {
-        navigate('/set-password');
-      } else {
-        navigate(from);
+      if (!user) {
+        toast({
+          title: "Login Failed",
+          description: "Invalid phone number or password. Please try again.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
       }
-    } else {
-      toast.error('Login failed - no user found');
+      
+      setCurrentUser(user);
+      
+      // If using temporary password, redirect to reset password page
+      if (user.tempPassword) {
+        toast({
+          title: "First Time Login",
+          description: "Please set a new password to complete your account setup.",
+        });
+        navigate("/reset-password");
+      } else {
+        toast({
+          title: "Login Successful",
+          description: `Welcome back, ${user.name}!`,
+        });
+        navigate("/");
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An error occurred during login. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
     }
   };
-  
+
   return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50 p-4">
+    <div className="flex items-center justify-center min-h-screen bg-background p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">HOTBC Management</CardTitle>
-          <CardDescription>Login to access your account</CardDescription>
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold">HOTBC Management App</CardTitle>
+          <CardDescription>
+            Enter your phone number and password to sign in
+          </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone Number</Label>
-              <Input 
-                id="phone"
-                type="tel"
-                placeholder="Enter your phone number"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                required
-                autoFocus
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Enter your phone number"
+                        {...field}
+                        disabled={isLoading}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <Label htmlFor="password">Password</Label>
-              </div>
-              <Input 
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder="Enter your password"
+                        {...field}
+                        disabled={isLoading}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={isLoading}
-            >
-              {isLoading ? 'Logging in...' : 'Sign In'}
-            </Button>
-          </CardFooter>
-        </form>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Signing in..." : "Sign In"}
+              </Button>
+            </form>
+          </Form>
+        </CardContent>
+        <CardFooter className="flex justify-center">
+          <p className="text-sm text-muted-foreground">
+            If you've received an invite, use your phone number and the temporary password sent via SMS.
+          </p>
+        </CardFooter>
       </Card>
     </div>
   );
